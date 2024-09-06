@@ -1,9 +1,9 @@
-PWD /home/jonat/Network-Control/LaTeX
+PWD /home/jonat/Network-Control/Paper
 INPUT /etc/texmf/web2c/texmf.cnf
 INPUT /usr/share/texmf/web2c/texmf.cnf
 INPUT /usr/share/texlive/texmf-dist/web2c/texmf.cnf
 INPUT /home/jonat/.texlive2021/texmf-var/web2c/pdftex/pdflatex.fmt
-INPUT /home/jonat/Network-Control/LaTeX/main.tex
+INPUT /home/jonat/Network-Control/Paper/main.tex
 OUTPUT main.log
 INPUT ./IEEEtran.cls
 INPUT ./IEEEtran.cls

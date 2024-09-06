@@ -56,6 +56,11 @@ Why overparameterization?
 
 \section{Preliminaries}
 Talk about prereqs (Graph theory, definitions)
+\begin{itemize}
+    \item Incidence matrix $D(\mathcal{G})$
+    \item $\diag$ extracts the diagonal of a square matrix as a column vector
+    \item $\odot$ denotes the Hadamard (elementwise) product of two matrices with the same dimensions.
+\end{itemize}
 
 \section{Network Dynamics}
 In order to explore this way of looking at robotic systems, we present a very simple class of systems in 2D space: a collection of $n$ point masses fixed together with $k$ massless rods, which act as distance constraints. Masses with multiple rods connected to them act as revolute joints. We define the Euler-Lagrange equation for this system as:
@@ -234,8 +239,12 @@ $$\begin{bmatrix}
 \end{bmatrix}=\begin{bmatrix}
     b_1^T\\ b_2^T
 \end{bmatrix}$$
-The projection:
+The rows of both sides of this equation are not multiples of each other, so we use a projection to find $u_i$ such that the equation is close: 
 $$u_1=b_1\cdot R_{90}\frac{r_{1e}}{\ell_1},\:u_2=b_2\cdot R_{90}\frac{r_{2e}}{\ell_2}$$
+
+This controller will converge $Q_e\rightarrow Q_{e,d}$ as $t\rightarrow 0$, without regard to the absolute positions of the coordinates $Q$. We will use another controller to control the absolute position of the robot, by applying additional force to node 2. Define the desired position of node 2 as $r_{2,d}$, where $\ddot{r}_{2,d}=0$, and redefine $f_2$ as:
+$$f_2=-k_3(r_2-r_{2,d}) - k_4(\dot{r}_2-\dot{r}_{2,d}) + m_2\begin{bmatrix} 0\\ g \end{bmatrix}$$
+As $r_2\rightarrow r_{2,d}$ and $\dot{r}_2\rightarrow \dot{r}_{2,d}$, $f_2$ will only exert force to resist gravity and the force term can be cancelled out of the control equation as before. The trade-off is that we sacrifice edge control accuracy while node control converges. Now, we are able to control the relative positions between adjacent nodes and control the absolute position of the robot to a certain degree simultaneously.
 
 \subsection{Four link pendulum}
 
