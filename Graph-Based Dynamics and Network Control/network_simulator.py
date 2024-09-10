@@ -53,8 +53,8 @@ class NetworkSimulator():
         Qe = self.D_of_G(k).T@Q
         Qe_dot = self.D_of_G(k).T@Q_dot
         
-        temp = np.linalg.inv(np.multiply(self.D_of_G(k).T@self.M_inv@self.D_of_G(k), Qe@Qe.T))
-        lambda_simplified = temp @ (Qe_dot@Qe_dot.T).diagonal()
+        temp = np.multiply(self.D_of_G(k).T@self.M_inv@self.D_of_G(k), Qe@Qe.T)
+        lambda_simplified = np.linalg.solve(temp, (Qe_dot@Qe_dot.T).diagonal())
         Lambda_simplified = np.diag(lambda_simplified)
 
         F_pd = np.zeros((self.n, 2))
@@ -80,7 +80,7 @@ class NetworkSimulator():
         F_g = self.M@self.G
         F = F_pd + F_g
         
-        lambda_full = temp @ (self.D_of_G(k).T@self.M_inv@F@Qe.T + Qe_dot@Qe_dot.T).diagonal()
+        lambda_full = np.linalg.solve(temp, (self.D_of_G(k).T@self.M_inv@F@Qe.T + Qe_dot@Qe_dot.T).diagonal())
         Lambda_full = np.diag(lambda_full)
         Q_ddot = -self.G + self.M_inv@(F - self.D_of_G(k)@Lambda_full@Qe)
 
@@ -95,15 +95,13 @@ class NetworkSimulator():
     def run(self):
         self.t = np.arange(0, self.tf, self.dt)
         sol = solve_ivp(self.ODE, (0, self.tf), np.concatenate((self.Q_0.reshape(2*self.n), self.Q_dot_0.reshape(2*self.n))), t_eval=self.t, method="DOP853", rtol=1e-10, atol=1e-10)
-        x1, y1, x2, y2, x3, y3, x4, y4, x5, y5, x6, y6, x1_dot, y1_dot, x2_dot, y2_dot, x3_dot, y3_dot, x4_dot, y4_dot, x5_dot, y5_dot, x6_dot, y6_dot = sol.y
+        self.Q = sol.y[:2*self.n].reshape((self.n, 2, len(self.t)))
 
-        k_array = np.array([self.k(t) for t in self.t])
-
-        self.Q = np.array([[x1, y1], [x2, y2], [x3, y3], [x4, y4], [x5, y5], [x6, y6]])
+        # self.Q = np.array([[x1, y1], [x2, y2], [x3, y3], [x4, y4], [x5, y5], [x6, y6]])
         self.Qe = np.empty((self.max_k, 2, len(self.t)))
-        for idx in range(len(self.t)):
-            self.Qe[:k_array[idx], :, idx] = self.D_of_G(k_array[idx]).T@self.Q[:, :, idx]
-            self.Qe[k_array[idx]:, :, idx] = np.nan
+        for idx, t in enumerate(self.t):
+            self.Qe[:self.k(t), :, idx] = self.D_of_G(self.k(t)).T@self.Q[:, :, idx]
+            self.Qe[self.k(t):, :, idx] = np.nan
 
         return self.t, self.Q, self.Qe
     
@@ -137,15 +135,15 @@ class NetworkSimulator():
             # plt.legend(loc='upper right')
             plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
 
-            plt.subplot(5, 2, 2*i+2)
+            plt.subplot(self.max_k, 2, 2*i+2)
             plt.plot(self.t, self.Qe[i, 1, :], label='ye'+str(i+1))
             plt.plot(self.t, [(self.Qe_d(ti, self.k(ti))[i, 1] if i < self.k(ti) else np.nan) for j, ti in enumerate(self.t)], color='black', linestyle='--')
             # plt.legend(loc='upper right')
             plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
 
-    def generate_animation(self):
+    def generate_animation(self, filename: str, limits: tuple = ((-2, 2), (-2, 2))):
         fig = plt.figure(figsize=(10, 10))
-        ax = fig.add_subplot(111, autoscale_on=False, xlim=(-2, 2), ylim=(-2, 2), aspect='equal')
+        ax = fig.add_subplot(111, autoscale_on=False, xlim=limits[0], ylim=limits[1], aspect='equal')
         ax.grid()
 
         # Plot initial position
@@ -163,20 +161,19 @@ class NetworkSimulator():
         # ax.text(0.05, 0.9, f'time: {t[0]:.1f} s', transform=ax.transAxes, bbox=dict(facecolor='white', alpha=0.5), fontsize=18)
 
         fps = 30
-        def animate(i):
-            idx = int(i/(fps*self.dt))
+        def animate(frame):
+            idx = int(frame/(fps*self.dt))
             t = self.t[idx]
-            for i in range(self.k(t)):
-                d_i = self.D_of_G(self.k(t))[:, i]
-                start_idx = np.where(d_i == 1)[0][0]
-                end_idx = np.where(d_i == -1)[0][0]
-                bars[i].set_data([self.Q[start_idx, 0, idx], self.Q[end_idx, 0, idx]], [self.Q[start_idx, 1, idx], self.Q[end_idx, 1, idx]])
-            if self.k(t) < self.max_k:
-                for i in range(self.k(t), self.max_k):
-                    bars[i].set_data([], [])
+            for j in range(self.k(t)):
+                d_j = self.D_of_G(self.k(t))[:, j]
+                start_idx = np.where(d_j == 1)[0][0]
+                end_idx = np.where(d_j == -1)[0][0]
+                bars[j].set_data([self.Q[start_idx, 0, idx], self.Q[end_idx, 0, idx]], [self.Q[start_idx, 1, idx], self.Q[end_idx, 1, idx]])
+            for j in range(self.k(t), self.max_k):
+                bars[j].set_data([], [])
 
         tf_sim = self.tf
         ani = animation.FuncAnimation(fig, animate, frames=fps*tf_sim)
         ffmpeg_writer = animation.FFMpegWriter(fps=fps)
-        ani.save(f'X-wing.mp4', writer=ffmpeg_writer)
+        ani.save(filename + ".mp4", writer=ffmpeg_writer)
         plt.close(fig)
