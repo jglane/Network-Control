@@ -49,6 +49,7 @@ class NetworkSimulatorV2():
         self.F_c = None
         self.F_g = None
         self.E = None
+        self.E_dot = None
 
     def F_c_fun(self, Q, Q_dot, Qe, Qe_dot, t, inv=None):
         # lambda_simplified = inv @ np.diagonal(Qe_dot@Qe_dot.T)
@@ -122,6 +123,9 @@ class NetworkSimulatorV2():
 
         Qe_d = np.array([self.Qe_d(ti) for ti in self.t]).transpose((1, 2, 0))
         self.E = self.Qe - Qe_d
+
+        Qe_d_dot = np.array([self.Qe_d_dot(ti) for ti in self.t]).transpose((1, 2, 0))
+        self.E_dot = self.Qe_dot - Qe_d_dot
     
     def generate_plots(self):
         if self.t is None or self.Q is None or self.Qe is None:
@@ -129,6 +133,7 @@ class NetworkSimulatorV2():
         
         # Nodes
         plt.figure()
+        plt.suptitle('Nodes')
         for i in range(self.n):
             plt.subplot(self.n, 2, 2*i+1)
             plt.plot(self.t, self.Q[i, 0, :], label='x'+str(i+1))
@@ -146,6 +151,7 @@ class NetworkSimulatorV2():
 
         # Edges
         plt.figure()
+        plt.suptitle('Edges')
         for i in range(self.k):
             plt.subplot(self.k, 2, 2*i+1)
             plt.plot(self.t, self.Qe[i, 0, :], label='xe'+str(i+1))
@@ -161,6 +167,7 @@ class NetworkSimulatorV2():
 
         # Errors
         plt.figure()
+        plt.suptitle('Errors')
         for i in range(self.k):
             plt.subplot(self.k, 2, 2*i+1)
             plt.plot(self.t, self.E[i, 0], label='ex'+str(i+1))
@@ -172,8 +179,35 @@ class NetworkSimulatorV2():
             # plt.legend(loc='upper right')
             plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
 
+        # Lyapunov Function
+        V = np.zeros(len(self.t))
+        V_dot = np.zeros(len(self.t))
+        for idx in range(len(self.t)):
+            lambda_simplified = np.linalg.inv(np.multiply(self.Le_of_G, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)) @ np.diagonal(self.Qe_dot[:, :, idx]@self.Qe_dot[:, :, idx].T)
+            # lambda_full = np.linalg.inv(np.multiply(self.Le_of_G, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)) @ np.diagonal(self.D_of_G.T@self.M_inv@self.F_c[:, :, idx]@self.Qe[:, :, idx].T + self.Qe_dot[:, :, idx]@self.Qe_dot[:, :, idx].T)
+            for j in range(self.k):
+                rej = self.Qe[j, :, idx]
+                Pj =  np.eye(2) - np.outer(rej, rej)/self.l[j]**2
+                epj = self.E[j, :, idx]
+                edj = self.E_dot[j, :, idx]
+                V[idx] += 0.5*self.kp*epj@((Pj+np.eye(2))@epj)
+                V_dot[idx] += -self.kd*edj@(Pj@edj)
+
+            V[idx] += 0.5*np.trace(self.E_dot[:, :, idx].T@self.E_dot[:, :, idx])
+            X = -np.array([(np.outer(self.Qe[j, :, idx], self.Qe[j, :, idx])/self.l[j]**2)@self.Qe_d_ddot(self.t[idx])[j, :] for j in range(self.k)]) - self.Le_of_G@np.diag(lambda_simplified)@self.Qe[:, :, idx]
+            V_dot[idx] += np.trace(self.E_dot[:, :, idx].T@(self.kp*self.E[:, :, idx] + X))
+
+        plt.figure()
+        plt.suptitle('Lyapunov Function')
+        plt.plot(self.t, V)
+        plt.plot(self.t, np.gradient(V, self.t))
+        plt.plot(self.t, V_dot)
+        plt.gca().set_xlim(0, self.tf)#(-0.05*self.tf, self.tf + 0.05*self.tf)
+        plt.gca().set_ylim(-0.15, 0.15)
+
         # Forces
         plt.figure()
+        plt.suptitle('Forces')
         for i in range(self.n):
             plt.subplot(self.n, 2, 2*i+1)
             plt.plot(self.t, self.F_c[i, 0], label='Fcx'+str(i+1))
@@ -204,7 +238,6 @@ class NetworkSimulatorV2():
             bars.append(bar)
 
         F_c_arrows = []
-        F_n_arrows = []
         F_g_arrows = []
         for i in range(self.n):
             F_c_arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.F_c[i, 0, 0], self.F_c[i, 1, 0], head_width=0.1, head_length=0.1, fc='r', ec='r')
