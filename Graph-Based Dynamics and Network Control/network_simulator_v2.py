@@ -5,8 +5,8 @@ from matplotlib import animation
 
 class NetworkSimulatorV2():
     def __init__(self, n: int, k: int,
-                 m, l, g, D_of_G, dt, tf, Q_0, Q_dot_0,
-                 i_leader, r_leader_d, r_leader_d_dot, r_leader_d_ddot,
+                 m, l, g, D_of_G, H, dt, tf, Q_0, Q_dot_0,
+                 f_l,#  r1_d, r1_d_dot, r1_d_ddot,
                  Qe_d, Qe_d_dot, Qe_d_ddot,
                  kp, kd) -> None:
         self.n = n
@@ -22,6 +22,7 @@ class NetworkSimulatorV2():
 
         self.D_of_G = D_of_G
         self.Le_of_G = D_of_G.T@self.M_inv@D_of_G
+        self.H = H
 
         self.dt = dt
         self.tf = tf
@@ -29,10 +30,10 @@ class NetworkSimulatorV2():
         self.Q_0 = Q_0
         self.Q_dot_0 = Q_dot_0
 
-        self.i_leader = i_leader
-        self.r_leader_d = r_leader_d
-        self.r_leader_d_dot = r_leader_d_dot
-        self.r_leader_d_ddot = r_leader_d_ddot
+        self.f_l = f_l
+        # self.r1_d = r1_d
+        # self.r1_d_dot = r1_d_dot
+        # self.r1_d_ddot = r1_d_ddot
 
         self.Qe_d = Qe_d
         self.Qe_d_dot = Qe_d_dot
@@ -54,23 +55,29 @@ class NetworkSimulatorV2():
     def F_c_fun(self, Q, Q_dot, Qe, Qe_dot, t, inv=None):
         # lambda_simplified = inv @ np.diagonal(Qe_dot@Qe_dot.T)
         # Lambda_simplified = np.diag(lambda_simplified)
-        S_temp = -self.kp*(Qe-self.Qe_d(t)) - self.kd*(Qe_dot-self.Qe_d_dot(t)) + self.Qe_d_ddot(t) #+ Le_of_G@Lambda_simplified@Qe        
-        # S = S_temp - np.diag(np.diagonal(S_temp@Qe.T@np.diag([1/self.l[i]**2 for i in range(self.k)])))@Qe
-        S = S_temp - np.multiply(S_temp@Qe.T, np.diag([1/self.l[i]**2 for i in range(self.k)]))@Qe
+        U_prime = -self.kp*(Qe-self.Qe_d(t)) - self.kd*(Qe_dot-self.Qe_d_dot(t)) + self.Qe_d_ddot(t)
+        U = U_prime - np.multiply(U_prime@Qe.T, np.diag([1/self.l[i]**2 for i in range(self.k)]))@Qe# + self.Le_of_G@Lambda_simplified@Qe
+        
+        #-self.kp*5*(Q[0, :] - self.r1_d(t)) - self.kd*5*(Q_dot[0, :] - self.r1_d_dot(t)) + self.r1_d_ddot(t)
+        F = self.M@(1/self.m[0]*np.outer(np.ones(self.n), self.f_l(t)) + self.H@U)
 
-        F = np.ones((self.n, 2))*np.nan
-        F[self.i_leader, :] = -self.kp*(Q[self.i_leader, :] - self.r_leader_d(t)) - self.kd*(Q_dot[self.i_leader, :] - self.r_leader_d_dot(t)) + self.r_leader_d_ddot(t)
+        # F = np.zeros((self.n, 2))
+        # F[0, :] = -self.kp*5*(Q[0, :] - self.r1_d(t)) - self.kd*5*(Q_dot[0, :] - self.r1_d_dot(t)) + self.r1_d_ddot(t)
+        # A1 = (self.D_of_G.T@self.M_inv)[:, 0]
+        # A_others = (self.D_of_G.T@self.M_inv)[:, 1:]
+        # F[1:, :] = np.linalg.inv(A_others)@(U - np.outer(A1, F[0, :]))
+        
+        # F = np.ones((self.n, 2))*np.nan
+        # while np.isnan(F).any():
+        #     for i in np.where(np.isnan(F[:, 0]))[0]: # i is the node where we want to set a force
+        #         for j in np.where(self.D_of_G[i, :] != 0)[0]: # j is an edge incident to the ith node
+        #             head = np.where(self.D_of_G[:, j] == 1)[0][0]
+        #             tail = np.where(self.D_of_G[:, j] == -1)[0][0]
 
-        while np.isnan(F).any():
-            for i in np.where(np.isnan(F[:, 0]))[0]: # i is the node where we want to set a force
-                for j in np.where(self.D_of_G[i, :] != 0)[0]: # j is an edge incident to the ith node
-                    head = np.where(self.D_of_G[:, j] == 1)[0][0]
-                    tail = np.where(self.D_of_G[:, j] == -1)[0][0]
-
-                    if head == i and ~np.isnan(F[tail, :]).any():
-                        F[i, :] = self.m[i]*(S[j, :] + F[tail, :]/self.m[tail])
-                    elif tail == i and ~np.isnan(F[head, :]).any():
-                        F[i, :] = self.m[i]*(-S[j, :] + F[head, :]/self.m[head])
+        #             if head == i and ~np.isnan(F[tail, :]).any():
+        #                 F[i, :] = self.m[i]*(U[j, :] + F[tail, :]/self.m[tail])
+        #             elif tail == i and ~np.isnan(F[head, :]).any():
+        #                 F[i, :] = self.m[i]*(-U[j, :] + F[head, :]/self.m[head])
 
         # def sat(f, a):
         #     f_norm = np.linalg.norm(f)
@@ -127,101 +134,141 @@ class NetworkSimulatorV2():
         Qe_d_dot = np.array([self.Qe_d_dot(ti) for ti in self.t]).transpose((1, 2, 0))
         self.E_dot = self.Qe_dot - Qe_d_dot
     
-    def generate_plots(self):
+    def generate_plots(self, filename: str):
         if self.t is None or self.Q is None or self.Qe is None:
             raise Exception("Run the simulation first")
         
-        # Nodes
-        plt.figure()
-        plt.suptitle('Nodes')
-        for i in range(self.n):
-            plt.subplot(self.n, 2, 2*i+1)
-            plt.plot(self.t, self.Q[i, 0, :], label='x'+str(i+1))
-            if i == self.i_leader:
-                plt.plot(self.t, [self.r_leader_d(t)[0] for t in self.t], color='black', linestyle='--')
-            # plt.legend(loc='upper right')
-            plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
+        # Parameters
+        plt.rcParams['font.size'] = 15
+        plt.rcParams['font.family'] = 'serif'
+        plt.rcParams['mathtext.fontset'] = 'dejavuserif'
+        
+        # # Nodes
+        # fig, axs = plt.subplots(self.n, 2, constrained_layout=True, figsize=(10, self.n * 2.5))
+        # for i in range(self.n):
+        #     ax = axs[i, 0]
+        #     ax.plot(self.t, self.Q[i, 0, :], label='x' + str(i+1), linewidth=1.5)
+        #     ax.set_xlim(0, self.tf)
+        #     ax.set_ylim(-0.3, 0.3)
+        #     ax.set_ylabel(f'Node {i+1} X', fontsize=20, fontfamily='serif')
+        #     if i == self.n - 1:
+        #         ax.set_xlabel('Time (s)', fontsize=20, fontfamily='serif')
+        #     # ax.legend(loc='best')
 
-            plt.subplot(self.n, 2, 2*i+2)
-            plt.plot(self.t, self.Q[i, 1], label='y'+str(i+1))
-            if i == self.i_leader:
-                plt.plot(self.t, [self.r_leader_d(t)[1] for t in self.t], color='black', linestyle='--')
-            # plt.legend(loc='upper right')
-            plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
+        #     ax = axs[i, 1]
+        #     ax.plot(self.t, self.Q[i, 1, :], label='y' + str(i+1), linewidth=1.5)
+        #     ax.set_xlim(0, self.tf)
+        #     ax.set_ylim(-0.3, 0.3)
+        #     ax.set_ylabel(f'Node {i+1} Y', fontsize=20, fontfamily='serif')
+        #     if i == self.n - 1:
+        #         ax.set_xlabel('Time (s)', fontsize=20, fontfamily='serif')
+        #     # ax.legend(loc='best')
+
+        # Add global labels for better presentation
+        # fig.text(0.5, 0.04, 'Time (s)', ha='center', fontsize=14)
+        # fig.text(0.04, 0.5, 'Position', va='center', rotation='vertical', fontsize=14)
+
 
         # Edges
-        plt.figure()
-        plt.suptitle('Edges')
-        for i in range(self.k):
-            plt.subplot(self.k, 2, 2*i+1)
-            plt.plot(self.t, self.Qe[i, 0, :], label='xe'+str(i+1))
-            plt.plot(self.t, [self.Qe_d(ti)[i, 0] for ti in self.t], color='black', linestyle='--')
-            # plt.legend(loc='upper right')
-            plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
+        fig, axs = plt.subplots(self.k, 2, constrained_layout=True, figsize=(10, self.k * 2))
+        for j in range(self.k):
+            ax = axs[j, 0]
+            ax.plot(self.t, self.Qe[j, 0, :])
+            ax.plot(self.t, [self.Qe_d(t)[j, 0] for t in self.t], color='black', linestyle='--')
+            ax.set_xlim(0, self.tf)
+            ax.set_ylim(-0.11, 0.11)
+            ax.set_ylabel('$r_{e' + str(j+1) + '}$', fontsize=25, fontfamily='serif')
+            if j == 0:
+                ax.set_title('x coordinates', fontsize=25, fontfamily='serif')
+            if j == self.k - 1:
+                ax.set_xlabel('Time (s)', fontsize=25, fontfamily='serif')
 
-            plt.subplot(self.k, 2, 2*i+2)
-            plt.plot(self.t, self.Qe[i, 1, :], label='ye'+str(i+1))
-            plt.plot(self.t, [self.Qe_d(ti)[i, 1] for ti in self.t], color='black', linestyle='--')
-            # plt.legend(loc='upper right')
-            plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
+            ax = axs[j, 1]
+            ax.plot(self.t, self.Qe[j, 1, :])
+            ax.plot(self.t, [self.Qe_d(t)[j, 1] for t in self.t], color='black', linestyle='--')
+            ax.set_xlim(0, self.tf)
+            ax.set_ylim(-0.11, 0.11)
+            if j == 0:
+                ax.set_title('y coordinates', fontsize=25, fontfamily='serif')
+            if j == self.k - 1:
+                ax.set_xlabel('Time (s)', fontsize=25, fontfamily='serif')
+        plt.savefig(filename + "_edges.pdf", format='pdf')
 
-        # Errors
-        plt.figure()
-        plt.suptitle('Errors')
-        for i in range(self.k):
-            plt.subplot(self.k, 2, 2*i+1)
-            plt.plot(self.t, self.E[i, 0], label='ex'+str(i+1))
-            # plt.legend(loc='upper right')
-            plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
+        # # Errors
+        # plt.figure()
+        # plt.suptitle('Errors')
+        # for i in range(self.k):
+        #     plt.subplot(self.k, 2, 2*i+1)
+        #     plt.plot(self.t, self.E[i, 0], label='ex'+str(i+1))
+        #     # plt.legend(loc='upper right')
+        #     plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
+        #     plt.gca().set_ylim(-0.001, 0.001)
 
-            plt.subplot(self.k, 2, 2*i+2)
-            plt.plot(self.t, self.E[i, 1], label='ey'+str(i+1))
-            # plt.legend(loc='upper right')
-            plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
+        #     plt.subplot(self.k, 2, 2*i+2)
+        #     plt.plot(self.t, self.E[i, 1], label='ey'+str(i+1))
+        #     # plt.legend(loc='upper right')
+        #     plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
+        #     plt.gca().set_ylim(-0.001, 0.001)
 
-        # Lyapunov Function
-        V = np.zeros(len(self.t))
-        V_dot = np.zeros(len(self.t))
-        for idx in range(len(self.t)):
-            lambda_simplified = np.linalg.inv(np.multiply(self.Le_of_G, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)) @ np.diagonal(self.Qe_dot[:, :, idx]@self.Qe_dot[:, :, idx].T)
-            # lambda_full = np.linalg.inv(np.multiply(self.Le_of_G, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)) @ np.diagonal(self.D_of_G.T@self.M_inv@self.F_c[:, :, idx]@self.Qe[:, :, idx].T + self.Qe_dot[:, :, idx]@self.Qe_dot[:, :, idx].T)
-            for j in range(self.k):
-                rej = self.Qe[j, :, idx]
-                Pj =  np.eye(2) - np.outer(rej, rej)/self.l[j]**2
-                epj = self.E[j, :, idx]
-                edj = self.E_dot[j, :, idx]
-                V[idx] += 0.5*self.kp*epj@((Pj+np.eye(2))@epj)
-                V_dot[idx] += -self.kd*edj@(Pj@edj)
+        # # J
+        # plt.figure()
+        # J_eig = np.zeros(len(self.t))
+        # for idx in range(len(self.t)):
+        #     J = np.multiply(self.Le_of_G, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)
+        #     J_eig[idx] = np.min(np.linalg.eigvals(J))
+        # plt.plot(self.t, J_eig)
+        # J_idk = np.multiply(self.Le_of_G, np.diag(np.square(self.l)))
+        # J_eig_idk = np.min(np.linalg.eigvals(J_idk))
+        # plt.axhline(J_eig_idk, color='r', linestyle='--')
 
-            V[idx] += 0.5*np.trace(self.E_dot[:, :, idx].T@self.E_dot[:, :, idx])
-            X = -np.array([(np.outer(self.Qe[j, :, idx], self.Qe[j, :, idx])/self.l[j]**2)@self.Qe_d_ddot(self.t[idx])[j, :] for j in range(self.k)]) - self.Le_of_G@np.diag(lambda_simplified)@self.Qe[:, :, idx]
-            V_dot[idx] += np.trace(self.E_dot[:, :, idx].T@(self.kp*self.E[:, :, idx] + X))
+        # # Lyapunov Function
+        # epsilon = 1e-6
+        # V = np.zeros(len(self.t))
+        # V_dot = np.zeros(len(self.t))
+        # psd = np.zeros(len(self.t))
+        # for idx in range(len(self.t)):
+        #     lambda_simplified = np.linalg.inv(np.multiply(self.Le_of_G, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)) @ np.diagonal(self.Qe_dot[:, :, idx]@self.Qe_dot[:, :, idx].T)
+        #     # lambda_full = np.linalg.inv(np.multiply(self.Le_of_G, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)) @ np.diagonal(self.D_of_G.T@self.M_inv@self.F_c[:, :, idx]@self.Qe[:, :, idx].T + self.Qe_dot[:, :, idx]@self.Qe_dot[:, :, idx].T)
+        #     for j in range(self.k):
+        #         rej = self.Qe[j, :, idx]
+        #         Pj =  np.eye(2) - np.outer(rej, rej)/self.l[j]**2
+        #         epj = self.E[j, :, idx]
+        #         edj = self.E_dot[j, :, idx]
+        #         V[idx] += 0.5*self.kp*epj@((Pj+epsilon*np.eye(2))@epj)
+        #         psd[idx] += 0.5*self.kp*edj@(Pj@edj)
+        #         V_dot[idx] += -self.kd*edj@(Pj@edj)
 
-        plt.figure()
-        plt.suptitle('Lyapunov Function')
-        plt.plot(self.t, V)
-        plt.plot(self.t, np.gradient(V, self.t))
-        plt.plot(self.t, V_dot)
-        plt.gca().set_xlim(0, self.tf)#(-0.05*self.tf, self.tf + 0.05*self.tf)
-        plt.gca().set_ylim(-0.15, 0.15)
+        #     V[idx] += 0.5*np.trace(self.E_dot[:, :, idx].T@self.E_dot[:, :, idx])
+        #     X = -np.array([(np.outer(self.Qe[j, :, idx], self.Qe[j, :, idx])/self.l[j]**2)@self.Qe_d_ddot(self.t[idx])[j, :] for j in range(self.k)]) - self.Le_of_G@np.diag(lambda_simplified)@self.Qe[:, :, idx]
+        #     # X = np.ones((self.k, 2))*5
+        #     V_dot[idx] += np.trace(self.E_dot[:, :, idx].T@(epsilon*self.kp*self.E[:, :, idx] + X))
 
-        # Forces
-        plt.figure()
-        plt.suptitle('Forces')
-        for i in range(self.n):
-            plt.subplot(self.n, 2, 2*i+1)
-            plt.plot(self.t, self.F_c[i, 0], label='Fcx'+str(i+1))
-            plt.plot(self.t, self.F_g[i, 0], label='Fgx'+str(i+1))
-            # plt.legend(loc='upper right')
-            plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
-            plt.gca().set_ylim(-1.1, 1.1)
+        # plt.figure()
+        # plt.suptitle('Lyapunov Function')
+        # plt.plot(self.t, V)
+        # plt.plot(self.t, np.gradient(V, self.t), linestyle='--')
+        # # plt.plot(self.t, psd)
+        # plt.plot(self.t, V_dot)
+        # plt.gca().set_xlim(0, self.tf)#(-0.05*self.tf, self.tf + 0.05*self.tf)
+        # # plt.gca().set_ylim(-0.15, 0.15)
 
-            plt.subplot(self.n, 2, 2*i+2)
-            plt.plot(self.t, self.F_c[i, 1], label='Fcy'+str(i+1))
-            plt.plot(self.t, self.F_g[i, 1], label='Fgy'+str(i+1))
-            # plt.legend(loc='upper right')
-            plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
-            plt.gca().set_ylim(-1.1, 1.1)
+        # # Forces
+        # plt.figure()
+        # plt.suptitle('Forces')
+        # for i in range(self.n):
+        #     plt.subplot(self.n, 2, 2*i+1)
+        #     plt.plot(self.t, self.F_c[i, 0], label='Fcx'+str(i+1))
+        #     plt.plot(self.t, self.F_g[i, 0], label='Fgx'+str(i+1))
+        #     # plt.legend(loc='upper right')
+        #     plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
+        #     plt.gca().set_ylim(-1.1, 1.1)
+
+        #     plt.subplot(self.n, 2, 2*i+2)
+        #     plt.plot(self.t, self.F_c[i, 1], label='Fcy'+str(i+1))
+        #     plt.plot(self.t, self.F_g[i, 1], label='Fgy'+str(i+1))
+        #     # plt.legend(loc='upper right')
+        #     plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
+        #     plt.gca().set_ylim(-1.1, 1.1)
 
     def generate_animation(self, filename: str, limits: tuple):
         fig = plt.figure(figsize=(10, 10))
@@ -232,18 +279,22 @@ class NetworkSimulatorV2():
         bars = []
         for i in range(self.k):
             d_i = self.D_of_G[:, i]
-            start_idx = np.where(d_i == 1)[0][0]
-            end_idx = np.where(d_i == -1)[0][0]
-            bar = ax.plot([self.Q_0[start_idx, 0], self.Q_0[end_idx, 0]], [self.Q_0[start_idx, 1], self.Q_0[end_idx, 1]], 'o-', color='purple', lw=2)[0]
+            head_idx = np.where(d_i == 1)[0][0]
+            tail_idx = np.where(d_i == -1)[0][0]
+            x, y = [self.Q_0[tail_idx, 0], self.Q_0[head_idx, 0]], [self.Q_0[tail_idx, 1], self.Q_0[head_idx, 1]]
+            bar = ax.arrow(x[0], y[0], x[1]-x[0], y[1]-y[0], length_includes_head=True, lw=2, head_width=0.01, head_length=0.01, fc='k', ec='k')
             bars.append(bar)
 
         F_c_arrows = []
-        F_g_arrows = []
+        # F_g_arrows = []
         for i in range(self.n):
-            F_c_arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.F_c[i, 0, 0], self.F_c[i, 1, 0], head_width=0.1, head_length=0.1, fc='r', ec='r')
-            F_g_arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.F_g[i, 0, 0]/10, self.F_g[i, 1, 0]/10, head_width=0.1, head_length=0.1, fc='b', ec='b')
+            if i == 0:
+                F_c_arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.f_l(0)[0], self.f_l(0)[1], head_width=0.01, head_length=0.01, fc='r', ec='r')
+            else:
+                F_c_arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.F_c[i, 0, 0], self.F_c[i, 1, 0], head_width=0.01, head_length=0.01, fc='b', ec='b')
+            # F_g_arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.F_g[i, 0, 0]/10, self.F_g[i, 1, 0]/10, head_width=0.01, head_length=0.01, fc='b', ec='b')
             F_c_arrows.append(F_c_arrow)
-            F_g_arrows.append(F_g_arrow)
+            # F_g_arrows.append(F_g_arrow)
 
         # ax.text(0.05, 0.9, f'time: {t[0]:.1f} s', transform=ax.transAxes, bbox=dict(facecolor='white', alpha=0.5), fontsize=18)
 
@@ -252,13 +303,17 @@ class NetworkSimulatorV2():
             idx = int(i/(fps*self.dt))
             for i in range(self.k):
                 d_i = self.D_of_G[:, i]
-                start_idx = np.where(d_i == 1)[0][0]
-                end_idx = np.where(d_i == -1)[0][0]
-                bars[i].set_data([self.Q[start_idx, 0, idx], self.Q[end_idx, 0, idx]], [self.Q[start_idx, 1, idx], self.Q[end_idx, 1, idx]])
+                head_idx = np.where(d_i == 1)[0][0]
+                tail_idx = np.where(d_i == -1)[0][0]
+                x, y = [self.Q[tail_idx, 0, idx], self.Q[head_idx, 0, idx]], [self.Q[tail_idx, 1, idx], self.Q[head_idx, 1, idx]]
+                bars[i].set_data(x=x[0], y=y[0], dx=x[1]-x[0], dy=y[1]-y[0])
             
             for i in range(self.n):
-                F_c_arrows[i].set_data(x=self.Q[i, 0, idx], y=self.Q[i, 1, idx], dx=self.F_c[i, 0, idx], dy=self.F_c[i, 1, idx])
-                F_g_arrows[i].set_data(x=self.Q[i, 0, idx], y=self.Q[i, 1, idx], dx=self.F_g[i, 0, idx]/10, dy=self.F_g[i, 1, idx]/10)
+                if i == 0:
+                    F_c_arrows[i].set_data(x=self.Q[i, 0, idx], y=self.Q[i, 1, idx], dx=self.f_l(self.t[idx])[0], dy=self.f_l(self.t[idx])[1])
+                else:
+                    F_c_arrows[i].set_data(x=self.Q[i, 0, idx], y=self.Q[i, 1, idx], dx=self.F_c[i, 0, idx], dy=self.F_c[i, 1, idx])
+                # F_g_arrows[i].set_data(x=self.Q[i, 0, idx], y=self.Q[i, 1, idx], dx=self.F_g[i, 0, idx]/10, dy=self.F_g[i, 1, idx]/10)
 
         tf_sim = self.tf
         ani = animation.FuncAnimation(fig, animate, frames=fps*tf_sim)
