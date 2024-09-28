@@ -139,9 +139,12 @@ class NetworkSimulatorV2():
             raise Exception("Run the simulation first")
         
         # Parameters
+        # make it look like latex
+        plt.rcParams['text.usetex'] = True
         plt.rcParams['font.size'] = 15
         plt.rcParams['font.family'] = 'serif'
-        plt.rcParams['mathtext.fontset'] = 'dejavuserif'
+        # plt.rcParams['mathtext.fontset'] = 'dejavuserif'
+        plt.rcParams['lines.linewidth'] = 2.5
         
         # # Nodes
         # fig, axs = plt.subplots(self.n, 2, constrained_layout=True, figsize=(10, self.n * 2.5))
@@ -210,13 +213,16 @@ class NetworkSimulatorV2():
         #     plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
         #     plt.gca().set_ylim(-0.001, 0.001)
 
-        # # J
+        # J
         # plt.figure()
         # J_eig = np.zeros(len(self.t))
         # for idx in range(len(self.t)):
         #     J = np.multiply(self.Le_of_G, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)
+        #     print(J)
         #     J_eig[idx] = np.min(np.linalg.eigvals(J))
+        # print(np.argmin(J_eig))
         # plt.plot(self.t, J_eig)
+        # print(J_eig)
         # J_idk = np.multiply(self.Le_of_G, np.diag(np.square(self.l)))
         # J_eig_idk = np.min(np.linalg.eigvals(J_idk))
         # plt.axhline(J_eig_idk, color='r', linestyle='--')
