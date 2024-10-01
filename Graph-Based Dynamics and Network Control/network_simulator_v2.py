@@ -134,16 +134,14 @@ class NetworkSimulatorV2():
         Qe_d_dot = np.array([self.Qe_d_dot(ti) for ti in self.t]).transpose((1, 2, 0))
         self.E_dot = self.Qe_dot - Qe_d_dot
     
-    def generate_plots(self, filename: str):
+    def generate_plots(self, filename: str, ylim: tuple):
         if self.t is None or self.Q is None or self.Qe is None:
             raise Exception("Run the simulation first")
         
         # Parameters
-        # make it look like latex
         plt.rcParams['text.usetex'] = True
         plt.rcParams['font.size'] = 15
         plt.rcParams['font.family'] = 'serif'
-        # plt.rcParams['mathtext.fontset'] = 'dejavuserif'
         plt.rcParams['lines.linewidth'] = 2.5
         
         # # Nodes
@@ -179,7 +177,7 @@ class NetworkSimulatorV2():
             ax.plot(self.t, self.Qe[j, 0, :])
             ax.plot(self.t, [self.Qe_d(t)[j, 0] for t in self.t], color='black', linestyle='--')
             ax.set_xlim(0, self.tf)
-            ax.set_ylim(-0.11, 0.11)
+            ax.set_ylim(ylim)
             ax.set_ylabel('$r_{e' + str(j+1) + '}$', fontsize=25, fontfamily='serif')
             if j == 0:
                 ax.set_title('x coordinates', fontsize=25, fontfamily='serif')
@@ -190,12 +188,13 @@ class NetworkSimulatorV2():
             ax.plot(self.t, self.Qe[j, 1, :])
             ax.plot(self.t, [self.Qe_d(t)[j, 1] for t in self.t], color='black', linestyle='--')
             ax.set_xlim(0, self.tf)
-            ax.set_ylim(-0.11, 0.11)
+            ax.set_ylim(ylim)
             if j == 0:
                 ax.set_title('y coordinates', fontsize=25, fontfamily='serif')
             if j == self.k - 1:
                 ax.set_xlabel('Time (s)', fontsize=25, fontfamily='serif')
         plt.savefig(filename + "_edges.pdf", format='pdf')
+        plt.savefig(filename + "_edges.png", format='png')
 
         # # Errors
         # plt.figure()
@@ -276,50 +275,112 @@ class NetworkSimulatorV2():
         #     plt.gca().set_xlim(-0.05*self.tf, self.tf + 0.05*self.tf)
         #     plt.gca().set_ylim(-1.1, 1.1)
 
-    def generate_animation(self, filename: str, limits: tuple):
+    def generate_animation(self, filename: str, title: str, limits: tuple):
+        # Parameters
+        plt.rcParams['text.usetex'] = True
+        plt.rcParams['font.family'] = 'serif'
+        plt.rcParams['font.size'] = 15
+        
         fig = plt.figure(figsize=(10, 10))
         ax = fig.add_subplot(111, autoscale_on=False, xlim=limits[0], ylim=limits[1], aspect='equal')
-        ax.grid()
+        ax.set_title(title, fontsize=30)
 
         # Plot initial position
+        points = []
         bars = []
-        for i in range(self.k):
-            d_i = self.D_of_G[:, i]
-            head_idx = np.where(d_i == 1)[0][0]
-            tail_idx = np.where(d_i == -1)[0][0]
+        F_c_arrows = []
+        for j in range(self.k):
+            d_j = self.D_of_G[:, j]
+            head_idx = np.where(d_j == 1)[0][0]
+            tail_idx = np.where(d_j == -1)[0][0]
             x, y = [self.Q_0[tail_idx, 0], self.Q_0[head_idx, 0]], [self.Q_0[tail_idx, 1], self.Q_0[head_idx, 1]]
-            bar = ax.arrow(x[0], y[0], x[1]-x[0], y[1]-y[0], length_includes_head=True, lw=2, head_width=0.01, head_length=0.01, fc='k', ec='k')
+            bar = ax.arrow(x[0], y[0], x[1]-x[0], y[1]-y[0], length_includes_head=True, lw=2, head_width=0.02, head_length=0.02, fc='k', ec='k')
             bars.append(bar)
 
-        F_c_arrows = []
         # F_g_arrows = []
         for i in range(self.n):
             if i == 0:
-                F_c_arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.f_l(0)[0], self.f_l(0)[1], head_width=0.01, head_length=0.01, fc='r', ec='r')
+                point, = ax.plot([self.Q[i, 0, 0]], [self.Q[i, 1, 0]], 'o', color='r')
+                F_c_arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.f_l(0)[0]/2, self.f_l(0)[1]/2, head_width=0.01, head_length=0.01, fc='r', ec='r')
             else:
-                F_c_arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.F_c[i, 0, 0], self.F_c[i, 1, 0], head_width=0.01, head_length=0.01, fc='b', ec='b')
+                point, = ax.plot([self.Q[i, 0, 0]], [self.Q[i, 1, 0]], 'o', color='b')
+                F_c_arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.F_c[i, 0, 0]/2, self.F_c[i, 1, 0]/2, head_width=0.01, head_length=0.01, fc='b', ec='b')
+            points.append(point)
             # F_g_arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.F_g[i, 0, 0]/10, self.F_g[i, 1, 0]/10, head_width=0.01, head_length=0.01, fc='b', ec='b')
             F_c_arrows.append(F_c_arrow)
             # F_g_arrows.append(F_g_arrow)
 
         # ax.text(0.05, 0.9, f'time: {t[0]:.1f} s', transform=ax.transAxes, bbox=dict(facecolor='white', alpha=0.5), fontsize=18)
 
+        fig.savefig(filename + "_frame1.png", format='png')
+
         fps = 30
         def animate(i):
             idx = int(i/(fps*self.dt))
-            for i in range(self.k):
-                d_i = self.D_of_G[:, i]
-                head_idx = np.where(d_i == 1)[0][0]
-                tail_idx = np.where(d_i == -1)[0][0]
+            for i in range(self.n):
+                points[i].set_data([self.Q[i, 0, idx]], [self.Q[i, 1, idx]])
+            for j in range(self.k):
+                d_j = self.D_of_G[:, j]
+                head_idx = np.where(d_j == 1)[0][0]
+                tail_idx = np.where(d_j == -1)[0][0]
                 x, y = [self.Q[tail_idx, 0, idx], self.Q[head_idx, 0, idx]], [self.Q[tail_idx, 1, idx], self.Q[head_idx, 1, idx]]
-                bars[i].set_data(x=x[0], y=y[0], dx=x[1]-x[0], dy=y[1]-y[0])
+                bars[j].set_data(x=x[0], y=y[0], dx=x[1]-x[0], dy=y[1]-y[0])
             
             for i in range(self.n):
                 if i == 0:
-                    F_c_arrows[i].set_data(x=self.Q[i, 0, idx], y=self.Q[i, 1, idx], dx=self.f_l(self.t[idx])[0], dy=self.f_l(self.t[idx])[1])
+                    F_c_arrows[i].set_data(x=self.Q[i, 0, idx], y=self.Q[i, 1, idx], dx=self.f_l(self.t[idx])[0]/2, dy=self.f_l(self.t[idx])[1]/2)
                 else:
-                    F_c_arrows[i].set_data(x=self.Q[i, 0, idx], y=self.Q[i, 1, idx], dx=self.F_c[i, 0, idx], dy=self.F_c[i, 1, idx])
+                    F_c_arrows[i].set_data(x=self.Q[i, 0, idx], y=self.Q[i, 1, idx], dx=self.F_c[i, 0, idx]/2, dy=self.F_c[i, 1, idx]/2)
                 # F_g_arrows[i].set_data(x=self.Q[i, 0, idx], y=self.Q[i, 1, idx], dx=self.F_g[i, 0, idx]/10, dy=self.F_g[i, 1, idx]/10)
+
+        tf_sim = self.tf
+        ani = animation.FuncAnimation(fig, animate, frames=fps*tf_sim)
+        ffmpeg_writer = animation.FFMpegWriter(fps=fps)
+        ani.save(filename + ".mp4", writer=ffmpeg_writer)
+        plt.close(fig)
+
+    def generate_animation_v2(self, filename: str, title: str, limits: tuple):
+        # Parameters
+        plt.rcParams['text.usetex'] = True
+        plt.rcParams['font.family'] = 'serif'
+        plt.rcParams['font.size'] = 15
+        
+        fig = plt.figure(figsize=(10, 10))
+        ax = fig.add_subplot(111, autoscale_on=False, xlim=limits[0], ylim=limits[1], aspect='equal')
+        ax.set_title(title, fontsize=30)
+
+        # Plot initial position
+        points = []
+        bars = []
+        for j in range(self.k):
+            d_j = self.D_of_G[:, j]
+            head_idx = np.where(d_j == 1)[0][0]
+            tail_idx = np.where(d_j == -1)[0][0]
+            x, y = [self.Q_0[tail_idx, 0], self.Q_0[head_idx, 0]], [self.Q_0[tail_idx, 1], self.Q_0[head_idx, 1]]
+            bar, = ax.plot(x, y, 'k-', lw=5)
+            bars.append(bar)
+        for i in range(self.n):
+            if i == 0:
+                point, = ax.plot([self.Q[i, 0, 0]], [self.Q[i, 1, 0]], 'o', color='r', markersize=10)
+            else:
+                point, = ax.plot([self.Q[i, 0, 0]], [self.Q[i, 1, 0]], 'o', color='b', markersize=10)
+            points.append(point)
+        f_l_arrow = ax.arrow(self.Q[0, 0, 0], self.Q[0, 1, 0], self.f_l(0)[0]/4, self.f_l(0)[1]/4, head_width=0.02, head_length=0.02, fc='r', ec='r', lw=2, zorder=10)
+
+        fig.savefig(filename + "_frame1.png", format='png')
+
+        fps = 30
+        def animate(i):
+            idx = int(i/(fps*self.dt))
+            for j in range(self.k):
+                d_j = self.D_of_G[:, j]
+                head_idx = np.where(d_j == 1)[0][0]
+                tail_idx = np.where(d_j == -1)[0][0]
+                x, y = [self.Q[tail_idx, 0, idx], self.Q[head_idx, 0, idx]], [self.Q[tail_idx, 1, idx], self.Q[head_idx, 1, idx]]
+                bars[j].set_data(x, y)
+            f_l_arrow.set_data(x=self.Q[0, 0, idx], y=self.Q[0, 1, idx], dx=self.f_l(self.t[idx])[0]/4, dy=self.f_l(self.t[idx])[1]/4)
+            for i in range(self.n):
+                points[i].set_data([self.Q[i, 0, idx]], [self.Q[i, 1, idx]])
 
         tf_sim = self.tf
         ani = animation.FuncAnimation(fig, animate, frames=fps*tf_sim)
