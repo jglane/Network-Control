@@ -8,7 +8,7 @@ class NetworkSimulatorV2():
                  m, l, g, D_of_G, H, dt, tf, Q_0, Q_dot_0,
                  f_l,#  r1_d, r1_d_dot, r1_d_ddot,
                  Qe_d, Qe_d_dot, Qe_d_ddot,
-                 kp, kd) -> None:
+                 kp, kd, dir: str) -> None:
         self.n = n
         self.k = k
 
@@ -41,6 +41,8 @@ class NetworkSimulatorV2():
 
         self.kp = kp
         self.kd = kd
+
+        self.dir = dir
         
         self.t = None
         self.Q = None
@@ -134,7 +136,7 @@ class NetworkSimulatorV2():
         Qe_d_dot = np.array([self.Qe_d_dot(ti) for ti in self.t]).transpose((1, 2, 0))
         self.E_dot = self.Qe_dot - Qe_d_dot
     
-    def generate_plots(self, filename: str, ylim: tuple):
+    def generate_plots(self, ylim: tuple):
         if self.t is None or self.Q is None or self.Qe is None:
             raise Exception("Run the simulation first")
         
@@ -193,8 +195,8 @@ class NetworkSimulatorV2():
                 ax.set_title('y coordinates', fontsize=25, fontfamily='serif')
             if j == self.k - 1:
                 ax.set_xlabel('Time (s)', fontsize=25, fontfamily='serif')
-        plt.savefig(filename + "_edges.pdf", format='pdf')
-        plt.savefig(filename + "_edges.png", format='png')
+        plt.savefig(f"{self.dir}/edges.pdf", format='pdf')
+        plt.savefig(f"{self.dir}/edges.png", format='png')
 
         # # Errors
         # plt.figure()
@@ -339,7 +341,10 @@ class NetworkSimulatorV2():
         ani.save(filename + ".mp4", writer=ffmpeg_writer)
         plt.close(fig)
 
-    def generate_animation_v2(self, filename: str, title: str, limits: tuple):
+    def generate_animation_v2(self, title: str, limits: tuple, arrows_bool: bool):
+        assert np.isclose(limits[0][1]-limits[0][0], limits[1][1]-limits[1][0])
+        head_size = 0.01/0.6 * (limits[0][1]-limits[0][0])
+        
         # Parameters
         plt.rcParams['text.usetex'] = True
         plt.rcParams['font.family'] = 'serif'
@@ -352,6 +357,7 @@ class NetworkSimulatorV2():
         # Plot initial position
         points = []
         bars = []
+        arrows = []
         for j in range(self.k):
             d_j = self.D_of_G[:, j]
             head_idx = np.where(d_j == 1)[0][0]
@@ -364,10 +370,16 @@ class NetworkSimulatorV2():
                 point, = ax.plot([self.Q[i, 0, 0]], [self.Q[i, 1, 0]], 'o', color='r', markersize=10)
             else:
                 point, = ax.plot([self.Q[i, 0, 0]], [self.Q[i, 1, 0]], 'o', color='b', markersize=10)
+                if arrows_bool:
+                    arrow = ax.arrow(self.Q[i, 0, 0], self.Q[i, 1, 0], self.F_c[i, 0, 0]/3, self.F_c[i, 1, 0]/3, head_width=head_size, head_length=head_size, fc='b', ec='b', lw=2, zorder=10)
+                    arrows.append(arrow)
             points.append(point)
-        f_l_arrow = ax.arrow(self.Q[0, 0, 0], self.Q[0, 1, 0], self.f_l(0)[0]/4, self.f_l(0)[1]/4, head_width=0.02, head_length=0.02, fc='r', ec='r', lw=2, zorder=10)
+        f_l_arrow = ax.arrow(self.Q[0, 0, 0], self.Q[0, 1, 0], self.f_l(0)[0]/3, self.f_l(0)[1]/3, head_width=head_size, head_length=head_size, fc='r', ec='r', lw=2, zorder=10)
 
-        fig.savefig(filename + "_frame1.png", format='png')
+        text = ax.text(0.05, 0.9, f't = {self.t[0]:.1f} s', transform=ax.transAxes, bbox=dict(facecolor='white', alpha=0.5), fontsize=20)
+        
+        arrows_txt = "_arrows" if arrows_bool else ""
+        fig.savefig(f"{self.dir}/frame1{arrows_txt}.png", format='png')
 
         fps = 30
         def animate(i):
@@ -378,12 +390,15 @@ class NetworkSimulatorV2():
                 tail_idx = np.where(d_j == -1)[0][0]
                 x, y = [self.Q[tail_idx, 0, idx], self.Q[head_idx, 0, idx]], [self.Q[tail_idx, 1, idx], self.Q[head_idx, 1, idx]]
                 bars[j].set_data(x, y)
-            f_l_arrow.set_data(x=self.Q[0, 0, idx], y=self.Q[0, 1, idx], dx=self.f_l(self.t[idx])[0]/4, dy=self.f_l(self.t[idx])[1]/4)
+            f_l_arrow.set_data(x=self.Q[0, 0, idx], y=self.Q[0, 1, idx], dx=self.f_l(self.t[idx])[0]/3, dy=self.f_l(self.t[idx])[1]/3)
             for i in range(self.n):
                 points[i].set_data([self.Q[i, 0, idx]], [self.Q[i, 1, idx]])
+                if i != 0 and arrows_bool:
+                    arrows[i-1].set_data(x=self.Q[i, 0, idx], y=self.Q[i, 1, idx], dx=self.F_c[i, 0, idx]/3, dy=self.F_c[i, 1, idx]/3)
+            text.set_text(f't = {self.t[idx]:.1f} s')
 
         tf_sim = self.tf
         ani = animation.FuncAnimation(fig, animate, frames=fps*tf_sim)
         ffmpeg_writer = animation.FFMpegWriter(fps=fps)
-        ani.save(filename + ".mp4", writer=ffmpeg_writer)
+        ani.save(f"{self.dir}/video{arrows_txt}.mp4", writer=ffmpeg_writer)
         plt.close(fig)

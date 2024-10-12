@@ -61,7 +61,8 @@ Qe_d_ddot = lambda t: np.array([
 
 f_l = lambda t: np.array([0, np.sin(2*np.pi*t)])
 
-sim = NetworkSimulatorV2(n, k, m, l, g, D_of_G, H, dt, tf, Q_0, Q_dot_0, f_l, Qe_d, Qe_d_dot, Qe_d_ddot, kp, kd)
+sim = NetworkSimulatorV2(n, k, m, l, g, D_of_G, H, dt, tf, Q_0, Q_dot_0, f_l, Qe_d, Qe_d_dot, Qe_d_ddot, kp, kd, "result3")
 sim.run()
-sim.generate_plots("result3", (-0.35, 0.35))
-# sim.generate_animation_v2("result3", "Fig. 3c", limits=((-1.125, 1.125), (-0.5, 1.75)))
+sim.generate_plots(ylim=(-0.35, 0.35))
+sim.generate_animation_v2("Fig. 3c", ((-1.125, 1.125), (-0.5, 1.75)), arrows_bool=False)
+sim.generate_animation_v2("Fig. 3c", ((-1.125, 1.125), (-0.5, 1.75)), arrows_bool=True)
