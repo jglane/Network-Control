@@ -50,5 +50,5 @@ f_l = lambda t: np.array([
 sim = NetworkSimulatorV2(n, k, m, l, g, D_of_G, H, dt, tf, Q_0, Q_dot_0, f_l, Qe_d, Qe_d_dot, Qe_d_ddot, kp, kd, "result2")
 sim.run()
 sim.generate_plots(ylim=(-0.11, 0.11))
-sim.generate_animation_v2("Fig. 2c", ((-0.3, 0.3), (-0.4, 0.2)), arrows_bool=False)
-sim.generate_animation_v2("Fig. 2c", ((-0.3, 0.3), (-0.4, 0.2)), arrows_bool=True)
+# sim.generate_animation_v2("Fig. 2c", ((-0.3, 0.3), (-0.4, 0.2)), arrows_bool=False)
+# sim.generate_animation_v2("Fig. 2c", ((-0.3, 0.3), (-0.4, 0.2)), arrows_bool=True)

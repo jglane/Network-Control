@@ -290,7 +290,7 @@ class NetworkSimulatorV2():
         plt.gca().set_xlim(0, self.tf)
         # plt.gca().set_ylim(-1, 1)
         plt.legend(loc='upper right')
-        plt.savefig(filename + "_lyapunov.pdf", format='pdf')
+        plt.savefig(f"{self.dir}/lyapunov.pdf", format='pdf')
         print("Max of V_dot:", np.max(V_dot[1:]))
         print("Max of V_dot_bound:", np.max(V_dot_bound[1:]))        
         # print(np.max(np.gradient(V, self.t)))
