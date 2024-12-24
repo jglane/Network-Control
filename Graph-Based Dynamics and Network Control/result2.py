@@ -26,6 +26,9 @@ H = np.array([[0, 0],
 kp = 10
 kd = 10
 
+def normalize(v):
+    return v/np.linalg.norm(v)
+
 Qe_d = lambda t: np.array([
     l[0]*np.array([-1, 0]),
     l[1]*np.array([1, 0])

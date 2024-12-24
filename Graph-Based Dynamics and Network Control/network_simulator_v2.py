@@ -228,36 +228,73 @@ class NetworkSimulatorV2():
         # J_eig_idk = np.min(np.linalg.eigvals(J_idk))
         # plt.axhline(J_eig_idk, color='r', linestyle='--')
 
-        # # Lyapunov Function
-        # epsilon = 1e-6
-        # V = np.zeros(len(self.t))
-        # V_dot = np.zeros(len(self.t))
-        # psd = np.zeros(len(self.t))
-        # for idx in range(len(self.t)):
-        #     lambda_simplified = np.linalg.inv(np.multiply(self.Le_of_G, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)) @ np.diagonal(self.Qe_dot[:, :, idx]@self.Qe_dot[:, :, idx].T)
-        #     # lambda_full = np.linalg.inv(np.multiply(self.Le_of_G, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)) @ np.diagonal(self.D_of_G.T@self.M_inv@self.F_c[:, :, idx]@self.Qe[:, :, idx].T + self.Qe_dot[:, :, idx]@self.Qe_dot[:, :, idx].T)
-        #     for j in range(self.k):
-        #         rej = self.Qe[j, :, idx]
-        #         Pj =  np.eye(2) - np.outer(rej, rej)/self.l[j]**2
-        #         epj = self.E[j, :, idx]
-        #         edj = self.E_dot[j, :, idx]
-        #         V[idx] += 0.5*self.kp*epj@((Pj+epsilon*np.eye(2))@epj)
-        #         psd[idx] += 0.5*self.kp*edj@(Pj@edj)
-        #         V_dot[idx] += -self.kd*edj@(Pj@edj)
+        # Lyapunov Function
+        eps = 1e-6
+        V = np.zeros(len(self.t))
+        V_dot = np.zeros(len(self.t))
+        V_dot1 = np.zeros(len(self.t))
+        V_dot2 = np.zeros(len(self.t))
+        V_dot_bound = np.zeros(len(self.t))
+        J_eig = np.zeros(len(self.t))
+        for idx in range(len(self.t)):
+            J = np.multiply(self.Le_of_G, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)
+            lambda_simplified = np.linalg.inv(J) @ np.diagonal(self.Qe_dot[:, :, idx]@self.Qe_dot[:, :, idx].T)
+            X = -np.array([(np.outer(self.Qe[j, :, idx], self.Qe[j, :, idx])/self.l[j]**2)@self.Qe_d_ddot(self.t[idx])[j, :] for j in range(self.k)]) - self.Le_of_G@np.diag(lambda_simplified)@self.Qe[:, :, idx]
+            
+            # Minimum value of the smallest eigenvlaue of J occurs when all edges are parallel (probably)
+            Qe_for_min_J = np.array([self.l, np.zeros_like(self.l)]).T
+            J_min = np.multiply(self.Le_of_G, Qe_for_min_J@Qe_for_min_J.T)
 
-        #     V[idx] += 0.5*np.trace(self.E_dot[:, :, idx].T@self.E_dot[:, :, idx])
-        #     X = -np.array([(np.outer(self.Qe[j, :, idx], self.Qe[j, :, idx])/self.l[j]**2)@self.Qe_d_ddot(self.t[idx])[j, :] for j in range(self.k)]) - self.Le_of_G@np.diag(lambda_simplified)@self.Qe[:, :, idx]
-        #     # X = np.ones((self.k, 2))*5
-        #     V_dot[idx] += np.trace(self.E_dot[:, :, idx].T@(epsilon*self.kp*self.E[:, :, idx] + X))
+            V_dot_bound[idx] += -self.kd
+            acc = 0
+            
+            for j in range(self.k):
+                rej = self.Qe[j, :, idx]
+                rej_dot = self.Qe_dot[j, :, idx]
+                # Pj =  np.eye(2) - np.outer(rej, rej)/self.l[j]**2
+                # Pj_dot = -(np.outer(rej_dot, rej) + np.outer(rej, rej_dot))/self.l[j]**2
+                epj = self.E[j, :, idx]
+                edj = self.E_dot[j, :, idx]
+                V[idx] += 0.5*self.kp*epj@epj + 0.5*edj@edj
+                V_dot[idx] += -self.kd*edj@edj + edj@X[j, :]
+                V_dot1[idx] += -self.kd*edj@edj
+                V_dot2[idx] += edj@X[j, :]
 
-        # plt.figure()
-        # plt.suptitle('Lyapunov Function')
-        # plt.plot(self.t, V)
-        # plt.plot(self.t, np.gradient(V, self.t), linestyle='--')
-        # # plt.plot(self.t, psd)
-        # plt.plot(self.t, V_dot)
-        # plt.gca().set_xlim(0, self.tf)#(-0.05*self.tf, self.tf + 0.05*self.tf)
-        # # plt.gca().set_ylim(-0.15, 0.15)
+                betaj = np.linalg.norm(np.concatenate((self.Le_of_G[:j, j], self.Le_of_G[j+1:, j])))*np.linalg.norm(np.concatenate((self.l[:j], self.l[j+1:])))/np.min(np.linalg.eigvals(J_min))
+                V_dot_bound[idx] += betaj*np.linalg.norm(edj)
+                acc += edj@edj
+
+            V_dot_bound[idx] *= acc
+            J_eig[idx] = np.min(np.linalg.eigvals(J))
+
+            # if idx == 100:
+            #     print(X)
+
+            # V[idx] += 0.5*np.trace(self.E_dot[:, :, idx].T@self.E_dot[:, :, idx])
+            # V_dot[idx] += np.trace(self.E_dot[:, :, idx].T@(epsilon*self.kp*self.E[:, :, idx] + X))
+
+        # Qe_test = np.array([[0.1, 0],
+        #                     [0.1, 0]])
+        # J_eig_test = np.min(np.linalg.eigvals(np.multiply(self.Le_of_G, Qe_test@Qe_test.T)))
+        # print(J_eig_test)
+
+        plt.figure()
+        plt.title('Lyapunov Function')
+        plt.plot(self.t, V, label='$V$')
+        plt.plot(self.t, np.gradient(V, self.t), linestyle='--')
+        plt.plot(self.t, V_dot, label='$\dot{V}$')
+        # plt.plot(self.t, V_dot1, label='term 1')
+        # plt.plot(self.t, V_dot2, label='term 2')
+        plt.plot(self.t, V_dot_bound, label='$\dot{V}$ bound')
+        # plt.plot(self.t, J_eig, label='J eigenvalues')
+        plt.gca().set_xlim(0, self.tf)
+        # plt.gca().set_ylim(-1, 1)
+        plt.legend(loc='upper right')
+        plt.savefig(filename + "_lyapunov.pdf", format='pdf')
+        print("Max of V_dot:", np.max(V_dot[1:]))
+        print("Max of V_dot_bound:", np.max(V_dot_bound[1:]))        
+        # print(np.max(np.gradient(V, self.t)))
+        assert(np.all(V_dot[1:] < V_dot_bound[1:] + 10e-15))
 
         # # Forces
         # plt.figure()
