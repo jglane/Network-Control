@@ -26,8 +26,8 @@ H = np.array([[0, 1, 0, 0, 0, 0],
               [0, 0, 0, 0, 1, 0],
               [0, 0, 0, 0, 0, 1]]).T
 
-kp = 100
-kd = 100
+kp = 10
+kd = 32
 
 fact = 1
 theta_d = lambda t: 3*np.pi/16*np.cos(fact*np.pi*t) + np.pi/16
@@ -67,4 +67,4 @@ sim = NetworkSimulatorV4(n, m, l, g, D, dt, tf, Q_0, Q_dot_0, f_l, Qe_d, Qe_d_do
 sim.run()
 sim.generate_plots(ylim=(-0.35, 0.35))
 # sim.generate_animation_v2("Fig. 3c", ((-1.125, 1.125), (-0.5, 1.75)), arrows_bool=False)
-sim.generate_animation_v2("Fig. 3c", ((-1.125, 1.125), (-0.5, 1.75)), arrows_bool=True)
+# sim.generate_animation_v2("Fig. 3c", ((-1.125, 1.125), (-0.5, 1.75)), arrows_bool=True)

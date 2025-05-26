@@ -52,13 +52,14 @@ class NetworkSimulatorV4():
         self.Q_dot = None
         self.Qe = None
         self.Qe_dot = None
-        # self.F_bar = None
+        self.F_bar = None
         # self.F_g = None
         self.e_R = None
         self.nu = None
         self.nu_d = None
         self.e_nu = None
         self.e_nu_dot = None
+        self.e = None
 
     def beta_fun(m, l, D):
         Le = D.T@la.inv(np.diag(m))@D
@@ -136,27 +137,27 @@ class NetworkSimulatorV4():
         lambda_full = la.inv(np.multiply(self.Le, Qe@Qe.T)) @ np.diagonal(self.D.T@self.M_inv@F@Qe.T + Qe_dot@Qe_dot.T)
         Lambda_full = np.diag(lambda_full)
         Q_ddot = -self.G + self.M_inv@(F - self.D@Lambda_full@Qe)
+
+        print(f'\r{round(t/self.tf*100)}%', end='')
         return np.concatenate((Q_dot.reshape(2*self.n), Q_ddot.reshape(2*self.n)))
     
     def run(self):
         self.t = np.arange(0, self.tf, self.dt)
         sol = solve_ivp(self.ODE, (0, self.tf), np.concatenate((self.Q_0.reshape(2*self.n), self.Q_dot_0.reshape(2*self.n))), t_eval=self.t, method="DOP853", rtol=1e-10, atol=1e-10)
+        print("")
         self.Q = sol.y[:2*self.n].reshape((self.n, 2, len(self.t)))
         self.Q_dot = sol.y[2*self.n:].reshape((self.n, 2, len(self.t)))
 
         self.Qe = np.empty((self.n-1, 2, len(self.t)))
+        self.Qe_dot = np.empty((self.n-1, 2, len(self.t)))
+        self.F_bar = np.empty((self.n, 2, len(self.t)))
+
         for idx in range(len(self.t)):
             self.Qe[:, :, idx] = self.D.T@self.Q[:, :, idx]
-        
-        self.Qe_dot = np.empty((self.n-1, 2, len(self.t)))
-        for idx in range(len(self.t)):
             self.Qe_dot[:, :, idx] = self.D.T@self.Q_dot[:, :, idx]
-
-        self.F_bar = np.empty((self.n, 2, len(self.t)))
-        for idx in range(len(self.t)):
             self.F_bar[:, :, idx] = self.F_bar_fun(self.Qe[:, :, idx], self.Qe_dot[:, :, idx], self.t[idx])
 
-        self.F_g = np.array([self.M@self.G for _ in range(len(self.t))]).transpose((1, 2, 0))
+        # self.F_g = np.array([self.M@self.G for _ in range(len(self.t))]).transpose((1, 2, 0))
 
         Qe_d = np.array([self.Qe_d(ti) for ti in self.t]).transpose((1, 2, 0))
         Qe_d_dot = np.array([self.Qe_d_dot(ti) for ti in self.t]).transpose((1, 2, 0))
@@ -167,6 +168,7 @@ class NetworkSimulatorV4():
         self.nu_d = np.empty((self.n-1, len(self.t)))
         self.e_nu = np.empty((self.n-1, len(self.t)))
         self.e_nu_dot = np.empty((self.n-1, len(self.t)))
+        self.e = np.empty((2*(self.n-1), len(self.t)))
         for idx in range(len(self.t)):
             for j in range(self.n-1):
                 Thetaj = np.array([[self.Qe[j, 0, idx], -self.Qe[j, 1, idx]],
@@ -178,6 +180,9 @@ class NetworkSimulatorV4():
                 self.nu[j, idx] = np.dot(np.array([-self.Qe[j, 1, idx], self.Qe[j, 0, idx]]), np.array([self.Qe_dot[j, 0, idx], self.Qe_dot[j, 1, idx]])) / self.l[j]
                 self.nu_d[j, idx] = np.dot(np.array([-Qe_d[j, 1, idx], Qe_d[j, 0, idx]]), np.array([Qe_d_dot[j, 0, idx], Qe_d_dot[j, 1, idx]])) / self.l[j]
                 self.e_nu[j, idx] = self.nu[j, idx] - self.nu_d[j, idx]
+
+                self.e[j, idx] = self.e_R[j, idx]
+                self.e[j + self.n-1, idx] = self.e_nu[j, idx]
 
                 # nuj_dot = np.dot(np.array([-self.Qe[j, 1, idx], self.Qe[j, 0, idx]]), np.array([self.Qe_ddot[j, 0, idx], self.Qe_ddot[j, 1, idx]])) / self.l[j]**2
                 # nuj_d_dot = np.dot(np.array([-Qe_d[j, 1, idx], Qe_d[j, 0, idx]]), np.array([Qe_d_ddot[j, 0, idx], Qe_d_ddot[j, 1, idx]])) / self.l[j]**2
@@ -245,42 +250,42 @@ class NetworkSimulatorV4():
         plt.savefig(f"{self.dir}/edges.pdf", format='pdf')
         plt.savefig(f"{self.dir}/edges.png", format='png')
 
-        # Lyapunov Function
-        V = 0.5*self.k_R*la.norm(self.e_R, axis=0)**2 + 0.5*la.norm(self.e_nu, axis=0)**2
-        V_dot = np.zeros(len(self.t))
-        V_dot_bound = np.zeros(len(self.t))
+        # # Lyapunov Function
+        # V = 0.5*self.k_R*la.norm(self.e_R, axis=0)**2 + 0.5*la.norm(self.e_nu, axis=0)**2
+        # V_dot = np.zeros(len(self.t))
+        # V_dot_bound = np.zeros(len(self.t))
         
-        for idx in range(len(self.t)):
-            J = np.multiply(self.Le, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)
-            lambda_simplified = la.inv(J) @ np.diagonal(self.Qe_dot[:, :, idx]@self.Qe_dot[:, :, idx].T)
-            # X = -np.array([(np.outer(self.Qe[j, :, idx], self.Qe[j, :, idx])/self.l[j]**2)@self.Qe_d_ddot(self.t[idx])[j, :] for j in range(self.n-1)]) - self.Le@np.diag(lambda_simplified)@self.Qe[:, :, idx]
-            X = -self.Le@np.diag(lambda_simplified)@self.Qe[:, :, idx]
+        # for idx in range(len(self.t)):
+        #     J = np.multiply(self.Le, self.Qe[:, :, idx]@self.Qe[:, :, idx].T)
+        #     lambda_simplified = la.inv(J) @ np.diagonal(self.Qe_dot[:, :, idx]@self.Qe_dot[:, :, idx].T)
+        #     # X = -np.array([(np.outer(self.Qe[j, :, idx], self.Qe[j, :, idx])/self.l[j]**2)@self.Qe_d_ddot(self.t[idx])[j, :] for j in range(self.n-1)]) - self.Le@np.diag(lambda_simplified)@self.Qe[:, :, idx]
+        #     X = -self.Le@np.diag(lambda_simplified)@self.Qe[:, :, idx]
 
-            V_dot[idx] = -self.k_nu*la.norm(self.e_nu[:, idx])**2
+        #     V_dot[idx] = -self.k_nu*la.norm(self.e_nu[:, idx])**2
             
-            # t1, t2, t3 = 0, 0, 0
-            for j in range(self.n-1):
-                rej_perp = np.array([-self.Qe[j, 1, idx], self.Qe[j, 0, idx]])
-                V_dot[idx] += -self.beta*(self.n-1)*np.abs(self.e_nu[j, idx])**3 + self.e_nu[j, idx]*np.dot(rej_perp, X[j, :])/self.l[j]
-                # t1 += np.abs(self.e_nu[j, idx])**3
-                # t2 += np.abs(self.e_nu[j, idx])**2
-                # t3 += np.abs(self.e_nu[j, idx])
+        #     # t1, t2, t3 = 0, 0, 0
+        #     for j in range(self.n-1):
+        #         rej_perp = np.array([-self.Qe[j, 1, idx], self.Qe[j, 0, idx]])
+        #         V_dot[idx] += -self.beta*(self.n-1)*np.abs(self.e_nu[j, idx])**3 + self.e_nu[j, idx]*np.dot(rej_perp, X[j, :])/self.l[j]
+        #         # t1 += np.abs(self.e_nu[j, idx])**3
+        #         # t2 += np.abs(self.e_nu[j, idx])**2
+        #         # t3 += np.abs(self.e_nu[j, idx])
             
-            V_dot_bound[idx] = -self.k_nu*la.norm(self.e_nu[:, idx])**2
+        #     V_dot_bound[idx] = -self.k_nu*la.norm(self.e_nu[:, idx])**2
 
-        print(f"Max of V_dot: {np.max(V_dot[1:])}")
-        print(f"Max of V_dot_bound: {np.max(V_dot_bound[1:])}")
-        if not np.all(V_dot <= V_dot_bound):
-            print("\033[31mV_dot is not bounded by V_dot_bound\033[0m")
+        # print(f"Max of V_dot: {np.max(V_dot[1:])}")
+        # print(f"Max of V_dot_bound: {np.max(V_dot_bound[1:])}")
+        # if not np.all(V_dot <= V_dot_bound):
+        #     print("\033[31mV_dot is not bounded by V_dot_bound\033[0m")
 
-        plt.figure(figsize=(10, 5))
-        plt.plot(self.t, V, label=r'$V$')
-        plt.plot(self.t, V_dot, label=r'$\dot{V}$')
-        plt.plot(self.t, V_dot_bound, label=r'$\dot{V}_{\mathrm{bound}}$')
-        # plt.xlim(0, self.tf)
-        plt.legend()
-        plt.savefig(f"{self.dir}/lyapunov.pdf", format='pdf')
-        # plt.show()
+        # plt.figure(figsize=(10, 5))
+        # plt.plot(self.t, V, label=r'$V$')
+        # plt.plot(self.t, V_dot, label=r'$\dot{V}$')
+        # plt.plot(self.t, V_dot_bound, label=r'$\dot{V}_{\mathrm{bound}}$')
+        # # plt.xlim(0, self.tf)
+        # plt.legend()
+        # plt.savefig(f"{self.dir}/lyapunov.pdf", format='pdf')
+        # # plt.show()
 
         # Exponential Stability
         V = np.zeros(len(self.t))
@@ -288,21 +293,21 @@ class NetworkSimulatorV4():
         V_dot_bound = np.zeros(len(self.t))
         V_exp_bound = np.zeros(len(self.t))
         
+        l_max = np.max(self.l)
+        B = np.max(self.nu_d)
         c2 = np.min([
             np.sqrt(self.k_R),
-            self.k_nu / (1 + 2*self.beta*(self.n-1)*np.pi*np.max(self.l)),
-            self.k_R*self.k_nu / (0.25*self.k_nu**2 + self.k_R*(1 + 2*self.beta*(self.n-1)*np.pi*np.max(self.l)))
+            (self.k_nu - 2*self.beta*B*(self.n-1)) / (1 + 2*self.beta*(self.n-1)*np.pi*l_max),
+            self.k_R*(self.k_nu - 2*self.beta*B*(self.n-1)) / (0.25*self.k_nu**2 + self.k_R*(1 + 2*self.beta*(self.n-1)*np.pi*l_max))
         ])*0.5
-        print(f"c2: {c2}")
 
         W1 = 0.5*np.kron(np.array([[self.k_R, c2],
-                                   [      c2,  1]]), np.eye(self.n-1))
-        W2 = np.kron(np.array([[    self.k_R*c2,                                                 0.5*self.k_nu*c2],
-                               [0.5*self.k_nu*c2, self.k_nu - c2*(1 + 2*self.beta*(self.n-1)*np.pi*np.max(self.l))]]), np.eye(self.n-1))
+                                   [c2,       1 ]]), np.eye(self.n-1))
+        W2 = np.kron(np.array([[self.k_R*c2,      0.5*self.k_nu*c2],
+                               [0.5*self.k_nu*c2, self.k_nu - c2*(1 + 2*self.beta*(self.n-1)*np.pi*l_max) - 2*self.beta*B*(self.n-1)]]), np.eye(self.n-1))
         min_W1 = np.min(la.eigvals(W1))
         max_W1 = np.max(la.eigvals(W1))
         min_W2 = np.min(la.eigvals(W2))
-        max_W2 = np.max(la.eigvals(W2))
         alpha = min_W2/max_W1
         
         for idx in range(len(self.t)):
@@ -319,40 +324,42 @@ class NetworkSimulatorV4():
 
             V0 = V[0]
             V_exp_bound[idx] = V0*np.exp(-alpha*self.t[idx])
-                
-        print(f"Max of V_dot: {np.max(V_dot)}")
-        print(f"Max of V_dot_bound: {np.max(V_dot_bound)}")
-        if not np.all(V_dot[1:] <= V_dot_bound[1:]):
-            print("\033[31mV_dot is not bounded by V_dot_bound\033[0m")
-
-        # C = 2*self.beta*la.norm(np.max(self.nu_d, axis=1), axis=0)*np.sqrt(self.n-1)
-        # print(f"C: {C}")
-        # D = self.beta*la.norm(np.max(self.nu_d, axis=1), axis=0)**2
-        # print(f"Max of C: {np.max(la.eigvals(np.array([[0, 0.5*c2*C], [0.5*c2*C, C]])))}")
-
-        B = np.max(self.nu_d)
-        lmax = np.max(self.l)
-
-        mu = self.beta*(self.n-1)*np.sqrt((B**2*np.sqrt(self.n-1) + 2*c2*np.pi*lmax*np.sqrt(self.n-1)*B)**2 + (B**2*np.sqrt(self.n-1))**2) / min_W2
+        
+        if B == 0:
+            print("\033[32mThe system is exponentially stable\033[0m")
+            if not np.all(V_dot[1:] <= V_dot_bound[1:]):
+                print("\033[31mV_dot is not bounded by V_dot_bound\033[0m")
+        elif self.k_nu > 2*self.beta*B*(self.n-1):
+            print("\033[32mThe system is exponentially stable to a bound\033[0m")
+        else:
+            print(f"\033[31mThe system is not exponentially stable, make kv > {2*self.beta*B*(self.n-1):.1f}\033[0m")
+            return
+        
+        print(f"c2: {c2}")
+        # print(f"Max of V_dot: {np.max(V_dot)}")
+        # print(f"Max of V_dot_bound: {np.max(V_dot_bound)}")
+        
+        mu = self.beta*B*(self.n-1)**1.5/min_W2 * np.sqrt((B + 2*c2*np.pi*l_max)**2 + (c2*B)**2)
+        b = np.sqrt(max_W1/min_W1)*mu
+        V_max = max_W1*mu**2
 
         # mu_R = np.pi*lmax*np.sqrt(self.n-1)
-        mu_nu = (self.n-1)**2*B**2 / (self.k_nu - 2*self.beta*B*(self.n-1))
+        # mu_nu = np.max([(self.n-1)*np.pi*l_max, (self.n-1)**2*B**2 / (self.k_nu - 2*self.beta*B*(self.n-1))])
         # mu_nu = np.max(la.norm(self.nu_d, axis=0))**2*(self.n-1)/self.k_nu
 
-        mu_R = np.max(np.roots((
-            -self.k_R*c2,
-            self.k_nu*c2*mu_nu + 2*B*c2*(self.n-1)*mu_nu + c2*(self.n-1)**1.5*B**2,
-            2*B*(self.n-1)*mu_nu**2 + (self.n-1)**1.5*B**2*mu_nu
-        )))
+        # mu_R = np.max(np.roots((
+        #     -self.k_R*c2,
+        #     self.k_nu*c2*mu_nu + 2*B*c2*(self.n-1)*mu_nu + c2*(self.n-1)**1.5*B**2,
+        #     2*B*(self.n-1)*mu_nu**2 + (self.n-1)**1.5*B**2*mu_nu
+        # )))
 
-        print(f"mu_R: {mu_R}")
-        print(f"mu_nu: {mu_nu}")
+        # print(f"mu_R: {mu_R}, {(self.n-1)*np.pi*l_max}")
+        # print(f"mu_nu: {mu_nu}")
         # mu = np.sqrt(mu_R**2 + mu_nu**2)
+        
         print(f"mu: {mu}")
-        V_max = max_W1*mu**2
-        print(f"V_max: {V_max}")
-        b = np.sqrt(max_W1/min_W1)*mu
         print(f"b: {b}")
+        print(f"V_max: {V_max}")
         
         plt.figure(figsize=(10, 5))
         plt.plot(self.t, V, label=r'$V$')
@@ -362,13 +369,14 @@ class NetworkSimulatorV4():
         # plt.xlim(0, 0.1)
         plt.legend()
         plt.savefig(f"{self.dir}/lyapunov2.pdf", format='pdf')
-        # plt.show()
         
         plt.figure(figsize=(10, 5))
-        plt.plot(self.t, la.norm(self.e_R, axis=0), label=r'$\|e_R\|_2$')
-        plt.plot(self.t, la.norm(self.e_nu, axis=0), label=r'$\|e_\nu\|_2$')
-        plt.axhline(mu_R, color='tab:blue', linestyle='--', label=r'$\mu_R$')
-        plt.axhline(mu_nu, color='tab:orange', linestyle='--', label=r'$\mu_\nu$')
+        # plt.plot(self.t, la.norm(self.e_R, axis=0), label=r'$\|e_R\|_2$')
+        # plt.plot(self.t, la.norm(self.e_nu, axis=0), label=r'$\|e_\nu\|_2$')
+        # plt.axhline(mu_R, color='tab:blue', linestyle='--', label=r'$\mu_R$')
+        # plt.axhline(mu_nu, color='tab:orange', linestyle='--', label=r'$\mu_\nu$')
+        plt.plot(self.t, la.norm(self.e, axis=0), label=r'$\|e\|_2$')
+        plt.axhline(mu, color='tab:blue', linestyle='--', label=r'$\mu$')
         # plt.ylim(0, 0.01)
         plt.legend()
         plt.savefig(f"{self.dir}/e.pdf", format='pdf')
@@ -513,6 +521,6 @@ class SO2:
         return np.arctan2(phi[1, 0], phi[0, 0])
     
 if __name__ == "__main__":
-    print(NetworkSimulatorV4.beta_fun(np.array([0.027]*3), np.array([0.3]*2), np.array([[-1, -1],
+    print(NetworkSimulatorV4.beta_fun(np.array([0.036]*3), np.array([0.37]*2), np.array([[-1, -1],
                                                                                         [ 1,  0],
                                                                                         [ 0,  1]])))
